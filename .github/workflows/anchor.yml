@@ -1,0 +1,112 @@
+name: anchor
+
+# Read-only, execute-only surface: this workflow calls the spine's
+# public.get_public_anchor() RPC with the ANON key, writes anchor heads +
+# OpenTimestamps proofs, and commits them. It never sees event bodies, and
+# holds no write-capable credential to the spine.
+
+on:
+  schedule:
+    - cron: '15 3 * * *'      # 03:15 UTC — 30 min after the spine computes (02:45)
+  workflow_dispatch:
+    inputs:
+      artefact_sha256:
+        description: 'D-B: 64 hex sha256 of a deliberate artefact to stamp (optional)'
+        required: false
+        default: ''
+      artefact_label:
+        description: 'D-B: short label for the artefact (optional)'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+concurrency:
+  group: anchor
+  cancel-in-progress: false
+
+jobs:
+  anchor:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Verify SPINE_URL is the complete host (fail fast if a secret is clipped)
+        env:
+          SPINE_URL: ${{ secrets.SPINE_URL }}
+        run: |
+          # GitHub masks the raw secret in logs; length + sha256 are safe to print
+          # and let an operator confirm the value against the known host hash.
+          echo "SPINE_URL length: ${#SPINE_URL}"
+          echo "SPINE_URL sha256: $(printf '%s' "$SPINE_URL" | sha256sum | cut -d' ' -f1)"
+          case "$SPINE_URL" in
+            https://*.supabase.co)
+              echo "shape ok: https://<ref>.supabase.co" ;;
+            *)
+              echo "SPINE_URL is not a complete https://<ref>.supabase.co host (clipped or malformed)"
+              exit 1 ;;
+          esac
+
+      - name: Install OpenTimestamps client
+        run: pip install opentimestamps-client==0.7.2
+
+      - name: Guard self-test
+        run: bash scripts/guard.sh --selftest
+
+      - name: Fetch + materialise anchors (catch-up, freshness + discrepancy gates)
+        env:
+          SPINE_URL: ${{ secrets.SPINE_URL }}
+          SPINE_ANON_KEY: ${{ secrets.SPINE_ANON_KEY }}
+        run: python3 scripts/fetch_anchors.py
+
+      - name: Record deliberate artefact (D-B, dispatch only)
+        if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.artefact_sha256 != '' }}
+        env:
+          ART_SHA: ${{ github.event.inputs.artefact_sha256 }}
+          ART_LABEL: ${{ github.event.inputs.artefact_label }}
+        run: python3 scripts/make_artefact.py
+
+      - name: Stamp new JSON (OpenTimestamps)
+        run: |
+          shopt -s nullglob
+          stamped=0
+          for f in anchors/*.json artefacts/*.json; do
+            if [ ! -f "$f.ots" ]; then
+              ots stamp "$f" && echo "stamped $f" && stamped=$((stamped+1))
+            fi
+          done
+          echo "newly stamped: $stamped"
+
+      - name: Upgrade existing proofs (best-effort)
+        continue-on-error: true
+        run: |
+          shopt -s nullglob
+          files=(anchors/*.json.ots artefacts/*.json.ots)
+          if [ ${#files[@]} -gt 0 ]; then
+            ots upgrade "${files[@]}" || true
+          else
+            echo "no sidecars to upgrade"
+          fi
+
+      - name: Guard staged tree (surface policy — the H4 floor)
+        run: |
+          git add -A
+          bash scripts/guard.sh
+
+      - name: Commit + push
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git diff --cached --quiet; then
+            echo "nothing to commit"
+            exit 0
+          fi
+          git commit -m "anchor: sync heads + OTS proofs ($(date -u +%Y-%m-%dT%H:%M:%SZ))"
+          git push

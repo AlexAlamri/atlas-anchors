@@ -205,31 +205,37 @@ begins at anchor 1.
 
 ---
 
-## Redaction / epoch protocol (hub decision D-A)
+## Redaction and epoch protocol (hub decision D-A, canonical)
 
-The chain is append-only over immutable events, so integrity and the ability to
-erase are in tension. The protocol resolves it **without silent edits**:
+The event log is append-only. Corrections are always new corrective events,
+never in-place edits. There is no supported path for editing or deleting an
+event during normal operation. During a study observation window, deletion is
+prohibited outright.
 
-1. **No in-place redaction.** An anchored row is never quietly altered or deleted
-   to remove content — that is exactly what the self-check is built to catch, and
-   it would (correctly) raise `discrepancy` forever after.
-2. **Redaction is an event.** A decision to redact is itself recorded as a new
-   event in the log, so the *fact* of redaction is anchored like anything else.
-3. **Epoch break when content must truly be expunged.** If a row's bytes must be
-   removed (legal/privacy), a new **epoch** is declared: a documented note is
-   published here, the pre-epoch chain is frozen and remains independently
-   verifiable up to its last head, and a **new genesis** (`atlas-anchors-v1`
-   continues, but a recorded epoch marker resets the effective batch baseline)
-   begins over the post-redaction log. Verifiers treat the pre-epoch and
-   post-epoch segments as **separate provable chains** joined by the published,
-   timestamped epoch note.
-4. **The break is visible.** An epoch is never retroactive and never hidden: the
-   discontinuity, its date, and its stated reason are part of the public record,
-   so a redaction can be *seen to have happened* even though the redacted bytes
-   are gone.
+If a deletion is ever forced outside that constraint (realistically only to
+remove identifiable or clinical-adjacent content that reached the log in error,
+hazard H8), it is performed as an explicit, disclosed epoch break, never a
+silent removal:
 
-> This section states the protocol as implemented for v1; the authoritative
-> wording is hub decision **D-A**.
+1. The offending row(s) are deleted.
+2. A corrective `hub:deviation:*` event is written stating what category of
+   content was removed and why, never reproducing the content.
+3. A dated epoch-break note is added to this repository recording the seq at
+   which the break occurs.
+
+The anchor chain makes this tamper-evident by construction. Because batching
+runs over the canonical row order by cumulative count, deleting any row shifts
+every later batch and diverges every subsequent head. The next nightly
+self-check recomputes from genesis and sets `discrepancy = true`; this
+divergence is the intended evidence of the redaction, not a fault.
+
+Verification across an epoch break: anchors committed before the break are
+immutable in this repository and OpenTimestamps-stamped, so they continue to
+attest, in hash form, that the redacted event existed before the break; its
+removal cannot be un-happened. Pre-break events verify against the pre-break
+anchor series; events after the break verify against the post-break series.
+The README names the break seq so a verifier reads the head discontinuity as
+the documented redaction rather than tampering.
 
 ---
 

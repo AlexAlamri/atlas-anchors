@@ -1,2 +1,7 @@
 __pycache__/
 *.pyc
+
+# `ots upgrade` moves each upgraded proof to <file>.bak (there is no flag to
+# suppress it). These backups are transient and are NOT part of the published
+# surface — keep them out of `git add -A` so the surface guard never sees them.
+*.bak

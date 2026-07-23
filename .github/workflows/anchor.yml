@@ -94,6 +94,12 @@ jobs:
           else
             echo "no sidecars to upgrade"
           fi
+          # `ots upgrade` moves each upgraded proof to <file>.bak. That backup is
+          # transient and outside the published surface, so it would trip the
+          # guard's path whitelist (this is exactly what reddened run
+          # 29984153481). Discard the backups; the upgraded *.ots itself stays
+          # and is committed normally. (.gitignore also excludes *.bak.)
+          rm -f anchors/*.json.ots.bak artefacts/*.json.ots.bak
 
       - name: Guard staged tree (surface policy — the H4 floor)
         run: |

@@ -76,6 +76,14 @@ def write_json(path, doc):
         f.write("\n")
 
 
+def _read_json(path):
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except (FileNotFoundError, ValueError):
+        return None
+
+
 def main():
     latest = rpc(None)
     if latest is None:
@@ -115,8 +123,24 @@ def main():
         write_json(f"{ANCHOR_DIR}/{s:06d}.json",
                    {k: row[k] for k in PUBLIC_FIELDS})
         print(f"wrote {ANCHOR_DIR}/{s:06d}.json")
-    write_json("latest.json", {k: latest[k] for k in LATEST_FIELDS})
-    print(f"latest.json -> seq {L} ({'+' + str(len(fetched)) if fetched else 'no'} new)")
+
+    new_latest = {k: latest[k] for k in LATEST_FIELDS}
+
+    if not fetched:
+        # No-op: the repo is already at the spine's latest seq. Distinct from
+        # STALE (freshness gate above) — the chain is current, there is simply
+        # nothing new to publish. Exit 0 green; write nothing unless latest.json
+        # has drifted, so the run produces no commit.
+        if _read_json("latest.json") != new_latest:
+            write_json("latest.json", new_latest)
+            print(f"latest.json -> seq {L} (resynced, no new anchors)")
+        print(f"no new anchors: repo and spine both at seq {L} "
+              f"(computed_at {latest['computed_at']}, {age_h:.1f}h old; "
+              f"within {STALE_HOURS}h freshness floor)")
+        return 0
+
+    write_json("latest.json", new_latest)
+    print(f"latest.json -> seq {L} (+{len(fetched)} new)")
     return 0
 
 

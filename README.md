@@ -1,10 +1,9 @@
 # atlas-anchors
 
-[
 
 ![nightly anchor](https://github.com/AlexAlamri/atlas-anchors/actions/workflows/anchor.yml/badge.svg)
 
-](https://github.com/AlexAlamri/atlas-anchors/actions/workflows/anchor.yml)
+(https://github.com/AlexAlamri/atlas-anchors/actions/workflows/anchor.yml)
 
 > The public notary for a private life. Nightly cryptographic heads over an append-only personal event log, independently timestamped via OpenTimestamps into Bitcoin. Heads and proofs only; the log itself never leaves the private spine.
 

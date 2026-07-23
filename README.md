@@ -1,5 +1,35 @@
 # atlas-anchors
 
+[
+
+![nightly anchor](https://github.com/AlexAlamri/atlas-anchors/actions/workflows/anchor.yml/badge.svg)
+
+](https://github.com/AlexAlamri/atlas-anchors/actions/workflows/anchor.yml)
+
+> The public notary for a private life. Nightly cryptographic heads over an append-only personal event log, independently timestamped via OpenTimestamps into Bitcoin. Heads and proofs only; the log itself never leaves the private spine.
+
+## The short version
+
+I run my working life on a self-built system called Atlas: one append-only log recording handovers, decisions, risks and status changes across surgery, research and ventures. I am also running a pre-registered study on myself: will I still be using it when criteria I wrote down in advance come due, or will it join the two systems I built and abandoned before it?
+
+For that question to mean anything, you should not have to take my word that the rules were written before the results. So every night this repository publishes a cryptographic fingerprint of the entire log, chained to the previous night's fingerprint, and timestamps it independently. If I ever quietly edited, deleted or backdated an entry, every subsequent fingerprint would stop matching, and the break would be visible right here.
+
+Nothing personal appears in this repo. No entries, no titles, no activity timestamps. Fingerprints only. When excerpts are released for verification later, they can be checked byte for byte against these anchors.
+
+## Research context: why a life-OS ships with a notary
+
+Personal AI systems are having a moment: agentic assistants, memory graphs, life dashboards. Almost none of it ships with governance you can verify. This repository is the governance layer of one such system, built as a first-class artefact rather than an afterthought, and small enough to copy.
+
+Three traditions meet here:
+
+- **Personal science and n-of-1 methods.** Atlas is the subject of a prospectively designed single-case observational study (external registration on OSF is imminent and will be linked here). The claim is deliberately modest: not "this tool works", but "abandonment criteria can be pre-registered, externally anchored, and honoured either way, including honouring a failure". Criteria were internally pinned to the log on 16 Jul 2026, before the observation windows opened; the first external anchor landed 22 Jul 2026; the gap is disclosed in the registration.
+
+- **Open-science mechanics.** The chain converts self-certified pre-specification into verifiable pre-specification. Batch-level inclusion proofs allow selective verbatim release of protocol-evidential events while the rest of a personal life record stays sealed in hash form. Pre-specification, tamper-evidence and privacy are usually in tension; this pattern holds all three at once.
+
+- **Human-AI collaboration with auditable provenance.** Atlas is co-engineered with an AI collaborator (Anthropic's Claude), disclosed per current authorship guidance. Every event in the log carries a source tag: human surface, AI surface, or automation. The division of labour between human and AI is not a claim in a paper; it is a queryable property of the primary data, covered by these anchors like everything else.
+
+The rest of this README is the specification: the exact frozen algorithm (v1), the threat model, what an anchor does and does not prove, and how to verify one yourself.
+
 Public, tamper-evident **integrity anchors** for the Atlas event log.
 
 Atlas keeps an append-only log of events in a private Postgres (Supabase) spine.

@@ -1,9 +1,7 @@
 # atlas-anchors
 
 
-![nightly anchor](https://github.com/AlexAlamri/atlas-anchors/actions/workflows/anchor.yml/badge.svg)
-
-(https://github.com/AlexAlamri/atlas-anchors/actions/workflows/anchor.yml)
+[![nightly anchor](https://github.com/AlexAlamri/atlas-anchors/actions/workflows/anchor.yml/badge.svg)](https://github.com/AlexAlamri/atlas-anchors/actions/workflows/anchor.yml)
 
 > The public notary for a private life. Nightly cryptographic heads over an append-only personal event log, independently timestamped via OpenTimestamps into Bitcoin. Heads and proofs only; the log itself never leaves the private spine.
 
@@ -13,7 +11,7 @@ I run my working life on a self-built system called Atlas: one append-only log r
 
 For that question to mean anything, you should not have to take my word that the rules were written before the results. So every night this repository publishes a cryptographic fingerprint of the entire log, chained to the previous night's fingerprint, and timestamps it independently. If I ever quietly edited, deleted or backdated an entry, every subsequent fingerprint would stop matching, and the break would be visible right here.
 
-Nothing personal appears in this repo. No entries, no titles, no activity timestamps. Fingerprints only. When excerpts are released for verification later, they can be checked byte for byte against these anchors.
+Nothing personal appears in this repo: no event contents, no titles, no per-event activity timestamps. One disclosure is deliberate and necessary — the pre-anchor gap section below names the log's earliest event date and the identifiers of the protocol-defining events predating anchor 1. Without those, a third party cannot judge how much of the log predates independent attestation, which is the limitation this repository exists to expose. Fingerprints only. When excerpts are released for verification later, they can be checked byte for byte against these anchors.
 
 ## Research context: why a life-OS ships with a notary
 

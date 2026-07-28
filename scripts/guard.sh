@@ -10,13 +10,19 @@
 #   * has a path outside the whitelist
 #       anchors/*.json  anchors/*.json.ots
 #       artefacts/*.json  artefacts/*.json.ots
-#       latest.json  README.md  .github/**  scripts/**
+#       latest.json  README.md  releases/*.md  .github/**  scripts/**
 #   * is a *.json (not *.json.ots) whose top-level keys fall outside the allowed
 #     set for its class (anchor / latest / artefact)
 #   * is a *.json containing — at ANY depth — a forbidden key
 #       (body, title, meta, covered_through, occurred_at, external_id, user_id)
 #   * is a *.json larger than 2048 bytes, is not a flat object, or holds any
 #     nested object/array (which could smuggle a body)
+#   * is a releases/*.md carrying FATAL material only: a coverage watermark
+#     (covered_through) or key-like material. Deliberate releases are prose,
+#     not machine surface: they legitimately carry dates, event identifiers and
+#     chain heads, so the JSON field scan is deliberately NOT applied to them.
+#     This mirrors the posture already accepted for README.md, which is
+#     path-allowed and content-unscanned; releases/*.md is the stricter case.
 #
 # Usage:
 #   scripts/guard.sh              check the git staging area (git diff --cached)
@@ -35,6 +41,7 @@ path_allowed() {
     anchors/*.json.ots|artefacts/*.json.ots) return 0 ;;
     anchors/*.json|artefacts/*.json)         return 0 ;;
     latest.json|README.md)                   return 0 ;;
+    releases/*.md)                           return 0 ;;
     .github/*|scripts/*)                      return 0 ;;
     *) return 1 ;;
   esac
@@ -91,6 +98,48 @@ sys.exit(0)
 PY
 }
 
+# check_release_md <path>
+# Deliberate releases are prose. The two things that must never cross to public
+# in prose are a coverage watermark and a live credential; everything else a
+# release says (dates, event ids, chain heads) is the point of publishing it.
+# So this is a FATAL-PATTERN scan, not a field scan.
+check_release_md() {
+  python3 - "$1" <<'PY'
+import re, sys
+path = sys.argv[1]
+text = open(path, encoding="utf-8", errors="replace").read()
+
+FATAL = [
+    # coverage watermark — never public, at any depth or in any spelling
+    ("coverage watermark (covered_through)", re.compile(r"covered_through", re.I)),
+    # key-like material
+    ("PEM private key block",  re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----")),
+    ("JSON Web Token",         re.compile(r"\beyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}")),
+    ("service-role reference", re.compile(r"service_role", re.I)),
+    ("GitHub token",           re.compile(r"\b(gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})\b")),
+    ("AWS access key id",      re.compile(r"\bAKIA[0-9A-Z]{16}\b")),
+    ("provider secret key",    re.compile(r"\bsk-(ant-)?[A-Za-z0-9_-]{20,}\b")),
+    # a named secret bound to a long opaque value, e.g.  VAPID_PRIVATE_KEY: <blob>
+    ("assigned secret value", re.compile(
+        r"(?i)\b(?:api[_-]?key|secret[_-]?key|private[_-]?key|access[_-]?key"
+        r"|auth[_-]?token|bearer|password|passwd|vapid[_-]?private[a-z_]*"
+        r"|anon[_-]?key|service[_-]?key)\b\s*[:=]\s*['\"]?[A-Za-z0-9_\-./+=]{24,}")),
+]
+
+hits = []
+for label, rx in FATAL:
+    m = rx.search(text)
+    if m:
+        line = text.count("\n", 0, m.start()) + 1
+        hits.append(f"{label} at line {line}")
+
+if hits:
+    print(f"{path}: fatal pattern(s) present: " + "; ".join(hits))
+    sys.exit(1)
+sys.exit(0)
+PY
+}
+
 check_staged() {
   local files fail=0 n=0
   files="$(git diff --cached --name-only --diff-filter=ACMR)"
@@ -104,6 +153,7 @@ check_staged() {
       anchors/*.json)   check_json "$p" anchor   || fail=1 ;;
       artefacts/*.json) check_json "$p" artefact || fail=1 ;;
       latest.json)      check_json "$p" latest   || fail=1 ;;
+      releases/*.md)    check_release_md "$p"    || fail=1 ;;   # prose: fatal patterns only
       *)                : ;;                                   # README.md / .github/** / scripts/**
     esac
   done <<EOF
@@ -122,9 +172,12 @@ selftest() {
   path_allowed "latest.json"                    || { echo "selftest: latest.json rejected"; rc=1; }
   path_allowed ".github/workflows/anchor.yml"   || { echo "selftest: .github path rejected"; rc=1; }
   path_allowed "scripts/guard.sh"               || { echo "selftest: scripts path rejected"; rc=1; }
+  path_allowed "releases/osf-registration-2026-07-28.md" || { echo "selftest: releases md rejected"; rc=1; }
   if path_allowed "secrets.env";      then echo "selftest: root path allowed (bad)"; rc=1; fi
   if path_allowed "evil.json";        then echo "selftest: root json allowed (bad)"; rc=1; fi
   if path_allowed "latest.json.ots";  then echo "selftest: stray ots allowed (bad)"; rc=1; fi
+  if path_allowed "releases/dump.json";  then echo "selftest: releases json allowed (bad)"; rc=1; fi
+  if path_allowed "releases/log.md.bak"; then echo "selftest: releases bak allowed (bad)"; rc=1; fi
   # --- json content ---
   cat > "$tmp/good.json" <<'J'
 {"seq":1,"computed_at":"2026-07-22T02:45:00.000000Z","new_count":90,"total_count":90,"batch_hash":"aa","prev_head":"bb","head":"cc","algo":"v1","discrepancy":false}
@@ -142,6 +195,27 @@ J
   # artefact happy path
   echo '{"sha256":"deadbeef","label":"osf-reg","computed_at":"2026-07-22T00:00:00.000000Z"}' > "$tmp/art.json"
   check_json "$tmp/art.json" artefact           || { echo "selftest: good artefact rejected"; rc=1; }
+  # --- releases/*.md: fatal patterns only ---
+  # A real release legitimately carries dates, event ids and chain heads. None
+  # of these may trip the scan, or the rule is useless for its only purpose.
+  cat > "$tmp/good.md" <<'M'
+# A release
+First external anchor: seq 1, computed 22 Jul 2026 22:26:33 UTC, 91 events.
+Chain head `9509be07bb1bdc32f31743aab137e4a5c77d9083697985a2de758598777bfbc1`.
+Spine event id `63050c75-ac39-4e47-bc9f-40634510f881`. No credentials appear here.
+See the Key references section; the anon key is held only by the client.
+M
+  check_release_md "$tmp/good.md"               || { echo "selftest: good release md rejected"; rc=1; }
+  printf 'watermark covered_through 2026-07-27\n'                         > "$tmp/r1.md"
+  printf -- '-----BEGIN EC PRIVATE KEY-----\nMHcCAQEE\n'                  > "$tmp/r2.md"
+  printf 'token eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoiYW5vbiJ9.QWJjRGVmR2hJams\n' > "$tmp/r3.md"
+  printf 'granted via the service_role credential\n'                      > "$tmp/r4.md"
+  printf 'VAPID_PRIVATE_KEY: dGhpc2lzYXNlY3JldGtleXZhbHVlMTIzNDU2Nzg5\n'  > "$tmp/r5.md"
+  printf 'export GH=ghp_abcdefghijklmnopqrstuvwxyz0123456789\n'           > "$tmp/r6.md"
+  for bad in r1 r2 r3 r4 r5 r6; do
+    if check_release_md "$tmp/$bad.md" >/dev/null 2>&1; then
+      echo "selftest: bad release fixture $bad accepted (should fail)"; rc=1; fi
+  done
   rm -rf "$tmp"
   if [ "$rc" -eq 0 ]; then echo "guard selftest: PASS"; return 0; fi
   echo "guard selftest: FAIL"; return 1
